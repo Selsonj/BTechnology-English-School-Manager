@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user (Admin or Teacher)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "role": { "type": "string", "enum": ["ADMIN", "TEACHER", "STUDENT"], "description": "User role" },
+        "studentId": { "type": "string", "description": "Link to student record (optional)" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "role"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "English school student",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "level": { "type": "string", "enum": ["BEGINNER", "ELEMENTARY", "INTERMEDIATE", "UPPER_INTERMEDIATE", "ADVANCED", "PROFICIENT"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "level"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "A class group",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "teacherId": { "type": "string", "description": "Reference to User ID" },
+        "schedule": { "type": "string", "description": "Class schedule (e.g., Mon/Wed 18:00)" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "teacherId", "schedule"]
+    },
+    "Enrollment": {
+      "title": "Enrollment",
+      "description": "Association between student and class",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "classId": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "classId"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Tuition payment record",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "paidAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["PENDING", "PAID", "OVERDUE"] }
+      },
+      "required": ["studentId", "amount", "dueDate", "status"]
+    },
+    "Grade": {
+      "title": "Grade",
+      "description": "Student grade record",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "subject": { "type": "string" },
+        "score": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "subject", "score"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Daily attendance record for a student in a class",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "classId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["PRESENT", "ABSENT", "LATE"] }
+      },
+      "required": ["studentId", "classId", "date", "status"]
+    },
+    "Material": {
+      "title": "Material",
+      "description": "Educational material linked to a class",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string", "enum": ["LINK", "DRIVE", "PDF", "VIDEO"] },
+        "classId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "url", "type", "classId", "teacherId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/students/{studentId}": { "schema": "Student", "description": "Student records" },
+    "/classes/{classId}": { "schema": "Class", "description": "Class groups" },
+    "/enrollments/{enrollmentId}": { "schema": "Enrollment", "description": "Student enrollments in classes" },
+    "/payments/{paymentId}": { "schema": "Payment", "description": "Tuition payments" },
+    "/grades/{gradeId}": { "schema": "Grade", "description": "Student grades" },
+    "/attendance/{attendanceId}": { "schema": "Attendance", "description": "Daily attendance records" },
+    "/materials/{materialId}": { "schema": "Material", "description": "Class materials" }
+  }
+}

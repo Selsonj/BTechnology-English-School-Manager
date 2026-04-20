@@ -1,0 +1,197 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && 
+        (request.auth.token.email in ["upgradeangola@gmail.com", "hospitalsanatoriodonamibe@gmail.com", "joaoselson@gmail.com"] ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN'));
+    }
+
+    function isTeacher() {
+      return isEmailVerified() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'TEACHER';
+    }
+
+    function isStudent() {
+      return isEmailVerified() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId != null;
+    }
+
+    function isStaff() {
+      return isAdmin() || isTeacher();
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.size() <= 100 && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             isValidEmail(data.email) &&
+             data.role in ['ADMIN', 'TEACHER', 'STUDENT'] &&
+             (data.studentId == null || (data.studentId is string && data.studentId.size() <= 128));
+    }
+
+    function isValidStudent(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             isValidEmail(data.email) &&
+             (data.phone == null || (data.phone is string && data.phone.size() <= 20)) &&
+             data.level in ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'UPPER_INTERMEDIATE', 'ADVANCED', 'PROFICIENT'];
+    }
+
+    function isValidClass(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.teacherId is string && data.teacherId.size() <= 128 &&
+             data.schedule is string && data.schedule.size() <= 100;
+    }
+
+    function isValidPayment(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.amount is number && data.amount >= 0 &&
+             data.status in ['PENDING', 'PAID', 'OVERDUE'] &&
+             (data.referenceMonth == null || (data.referenceMonth is string && data.referenceMonth.size() <= 20));
+    }
+
+    function isValidGrade(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.subject is string && data.subject.size() <= 100 &&
+             data.score is number && data.score >= 0 && data.score <= 100;
+    }
+
+    function isValidEnrollment(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.classId is string && data.classId.size() <= 128;
+    }
+
+    function isValidAttendance(data) {
+      return data.studentId is string && data.studentId.size() <= 128 &&
+             data.classId is string && data.classId.size() <= 128 &&
+             data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             data.status in ['PRESENT', 'ABSENT', 'LATE'];
+    }
+
+    function isValidMaterial(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.url is string && data.url.size() > 0 && data.url.size() <= 2048 &&
+             data.type in ['LINK', 'DRIVE', 'PDF', 'VIDEO', 'DOCUMENT'] &&
+             data.classId is string && data.classId.size() <= 128 &&
+             data.teacherId is string && data.teacherId.size() <= 128;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin() || isTeacher());
+      
+      allow create: if isSignedIn() && 
+                      isValidId(userId) && 
+                      (request.auth.uid == userId || isAdmin());
+      
+      allow update: if isSignedIn() && 
+                      (isAdmin() || request.auth.uid == userId) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'studentId', 'createdAt']);
+    }
+
+    match /students/{studentId} {
+      allow read: if isStaff() || 
+                    (isStudent() && studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId) ||
+                    (isSignedIn() && request.auth.token.email == resource.data.email);
+      allow create: if isStaff() && isValidId(studentId) && isValidStudent(incoming());
+      allow update: if isStaff() && isValidStudent(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'phone', 'level', 'createdAt']);
+      allow delete: if isAdmin();
+    }
+
+    match /classes/{classId} {
+      allow read: if isStaff() || isStudent();
+      allow create: if isStaff() && isValidId(classId) && isValidClass(incoming());
+      allow update: if isStaff() && isValidClass(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'teacherId', 'schedule', 'createdAt']);
+      allow delete: if isAdmin();
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if isStaff() || (isStudent() && 
+        resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId);
+      allow create: if isStaff() && isValidId(enrollmentId) && isValidEnrollment(incoming());
+      allow update: if isStaff() && isValidEnrollment(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['studentId', 'classId', 'startDate']);
+      allow delete: if isStaff(); // Teachers can manage enrollments too
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isStaff() || (isStudent() && 
+        resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId);
+      allow create: if isStaff() && isValidId(paymentId) && isValidPayment(incoming());
+      allow update: if isStaff() && isValidPayment(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['studentId', 'amount', 'dueDate', 'paidAt', 'status', 'createdAt', 'referenceMonth']);
+      allow delete: if isAdmin();
+    }
+
+    match /grades/{gradeId} {
+      allow read: if isStaff() || (isStudent() && 
+        resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId);
+      allow create: if isStaff() && isValidId(gradeId) && isValidGrade(incoming());
+      allow update: if isStaff() && isValidGrade(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['studentId', 'subject', 'score', 'date']);
+      allow delete: if isAdmin();
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if isStaff() || (isStudent() && 
+        resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId);
+      allow create: if isStaff() && isValidId(attendanceId) && isValidAttendance(incoming());
+      allow update: if isStaff() && isValidAttendance(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['studentId', 'classId', 'date', 'status']);
+      allow delete: if isStaff();
+    }
+
+    match /materials/{materialId} {
+      allow read: if request.auth != null;
+      allow write: if isStaff();
+    }
+
+    // Connection test path
+    match /_connection_test_/{docId} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}
