@@ -78,3 +78,19 @@ export interface Material {
   teacherId: string;
   createdAt: any;
 }
+
+export interface Chat {
+  id: string;
+  participants: string[];
+  lastMessage?: string;
+  updatedAt: any;
+  participantNames: Record<string, string>;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  createdAt: any;
+}

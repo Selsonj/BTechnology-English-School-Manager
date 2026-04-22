@@ -114,6 +114,16 @@ service cloud.firestore {
              data.teacherId is string && data.teacherId.size() <= 128;
     }
 
+    function isValidChat(data) {
+      return data.participants is list && data.participants.size() >= 2;
+    }
+
+    function isValidMessage(data) {
+      return data.senderId is string && data.senderId.size() > 0 &&
+             data.senderName is string && data.senderName.size() > 0 &&
+             data.text is string && data.text.size() > 0;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -187,6 +197,36 @@ service cloud.firestore {
     match /materials/{materialId} {
       allow read: if request.auth != null;
       allow write: if isStaff();
+    }
+
+    match /chats/{chatId} {
+      allow list, get: if isSignedIn() && (
+        request.auth.uid in resource.data.participants || 
+        (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in resource.data.participants)
+      );
+      allow create: if isSignedIn() && request.auth.uid in incoming().participants && isValidChat(incoming());
+      allow update: if isSignedIn() && (
+        request.auth.uid in existing().participants || 
+        (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in existing().participants)
+      ) && isValidChat(incoming());
+      
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+          (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
+        );
+        allow create: if isSignedIn() && (
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+          (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
+        ) && isValidMessage(incoming());
+      }
+    }
+
+    match /classChats/{classId} {
+      match /messages/{messageId} {
+        allow read: if isSignedIn(); // Broad read for listing, but relies on client queries
+        allow create: if isSignedIn() && isValidMessage(incoming()); 
+      }
     }
 
     // Connection test path

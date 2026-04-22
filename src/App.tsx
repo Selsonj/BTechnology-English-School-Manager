@@ -61,10 +61,15 @@ import {
   ExternalLink,
   UploadCloud,
   Video,
-  FileDown
+  FileDown,
+  Sparkles,
+  MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, Class, Payment, UserProfile, Role, EnglishLevel, PaymentStatus, Grade, Enrollment, Attendance, Material } from './types';
+import { AIConversationSimulator } from './components/AIConversationSimulator';
+import { Messaging } from './components/Messaging';
+import { ClassChat } from './components/ClassChat';
 
 // --- Helpers ---
 
@@ -417,16 +422,20 @@ export default function App() {
           <nav className="flex-1 space-y-2 mt-20 md:mt-0">
             {(profile?.role === 'STUDENT' ? [
               { id: 'overview', label: 'Painel', icon: TrendingUp },
+              { id: 'messages', label: 'Mensagens', icon: MessageCircle },
+              { id: 'ai-practice', label: 'IA Conversação', icon: Sparkles },
               { id: 'my-record', label: 'Minhas Aulas', icon: BookOpen },
               { id: 'my-grades', label: 'Meu Progresso', icon: GraduationCap },
               { id: 'my-finance', label: 'Pagamentos', icon: CreditCard },
             ] : [
               { id: 'overview', label: 'Visão Geral', icon: TrendingUp },
               { id: 'students', label: 'Alunos', icon: Users },
+              { id: 'messages', label: 'Mensagens', icon: MessageCircle },
               { id: 'classes', label: 'Turmas', icon: BookOpen },
               { id: 'progress', label: 'Progresso', icon: GraduationCap },
               { id: 'attendance', label: 'Chamada', icon: UserCheck },
               { id: 'finance', label: 'Financeiro', icon: CreditCard },
+              { id: 'ai-practice', label: 'IA Practice (Demo)', icon: Sparkles },
             ]).map((item) => (
               <button
                 key={item.id}
@@ -437,7 +446,7 @@ export default function App() {
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-mono uppercase tracking-wider transition-all ${
                   activeTab === item.id 
                     ? 'bg-[#003366] text-white' 
-                    : 'hover:bg-[#003366] hover:text-white opacity-60 hover:opacity-100'
+                    : 'hover:bg-[#003366] hover:text-white opacity-80 hover:opacity-100 text-[#003366]'
                 }`}
               >
                 <item.icon size={18} />
@@ -479,6 +488,8 @@ export default function App() {
               {(profile?.role === 'STUDENT') ? (
                 <>
                   {activeTab === 'overview' && <StudentOverview profile={profile} students={students} classes={classes} attendances={attendances} payments={payments} grades={grades} />}
+                  {activeTab === 'messages' && <Messaging userProfile={profile} students={[]} />}
+                  {activeTab === 'ai-practice' && <AIConversationSimulator profile={profile} />}
                   {activeTab === 'my-record' && <StudentClasses profile={profile} enrollments={enrollments} classes={classes} attendances={attendances} materials={materials} />}
                   {activeTab === 'my-grades' && <StudentProgress profile={profile} grades={grades} />}
                   {activeTab === 'my-finance' && <StudentFinance profile={profile} payments={payments} />}
@@ -487,10 +498,12 @@ export default function App() {
                 <>
                   {activeTab === 'overview' && <Overview students={students} classes={classes} payments={payments} />}
                   {activeTab === 'students' && <StudentsManager students={students} enrollments={enrollments} />}
+                  {activeTab === 'messages' && <Messaging userProfile={profile} students={students} />}
                   {activeTab === 'classes' && <ClassesManager classes={classes} students={students} enrollments={enrollments} materials={materials} profile={profile} />}
                   {activeTab === 'finance' && <FinanceManager payments={payments} students={students} />}
                   {activeTab === 'progress' && <ProgressManager students={students} grades={grades} />}
                   {activeTab === 'attendance' && <AttendanceManager classes={classes} students={students} enrollments={enrollments} attendances={attendances} />}
+                  {activeTab === 'ai-practice' && <AIConversationSimulator profile={profile} />}
                 </>
               )}
             </motion.div>
@@ -901,6 +914,7 @@ function ClassesManager({ classes, students, enrollments, materials, profile }: 
         </div>
 
         <MaterialsSection classId={selectedClassId} materials={materials} user={profile} />
+        <ClassChat classId={selectedClassId} userProfile={profile} teacherId={cls?.teacherId} />
       </div>
     );
   }
@@ -1575,6 +1589,7 @@ function StudentClasses({ profile, enrollments, classes, attendances, materials 
                 </div>
               </div>
               <MaterialsSection classId={cls.id} materials={materials} user={profile} />
+              <ClassChat classId={cls.id} userProfile={profile} teacherId={cls.teacherId} />
             </div>
           );
         })}
@@ -1683,12 +1698,12 @@ function StudentFinance({ profile, payments }: { profile: UserProfile | null, pa
         )}
       </div>
 
-      <div className="p-6 bg-[#003366] bg-opacity-5 border border-[#003366] border-opacity-10">
+      <div className="p-6 bg-[#003366] border border-[#003366] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
          <div className="flex items-start gap-4">
-            <AlertCircle className="text-[#003366] flex-shrink-0" size={20} />
+            <AlertCircle className="text-white flex-shrink-0" size={20} />
             <div className="space-y-2">
-               <h4 className="text-xs font-mono font-bold uppercase tracking-widest text-[#003366]">Informação de Pagamento</h4>
-               <p className="text-xs opacity-70 leading-relaxed">
+               <h4 className="text-xs font-mono font-bold uppercase tracking-widest text-white">Informação de Pagamento</h4>
+               <p className="text-xs text-white opacity-90 leading-relaxed font-medium">
                  Para regularizar suas pendências, dirija-se à secretaria da escola ou utilize os dados bancários informados na sua ficha de inscrição. Em caso de dúvidas, contate o suporte.
                </p>
             </div>
@@ -1769,7 +1784,7 @@ function MaterialsSection({ classId, materials, user }: { classId: string, mater
   return (
     <div className="space-y-6 mt-8 pt-8 border-t border-[#003366] border-opacity-10">
       <div className="flex justify-between items-center">
-        <h4 className="text-[10px] font-mono uppercase opacity-50 tracking-widest flex items-center gap-2">
+        <h4 className="text-[10px] font-mono uppercase opacity-80 text-[#003366] font-bold tracking-widest flex items-center gap-2">
           <FileText size={12} />
           Materiais & Conteúdos
         </h4>

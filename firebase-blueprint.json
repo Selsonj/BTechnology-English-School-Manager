@@ -93,12 +93,36 @@
       "properties": {
         "title": { "type": "string" },
         "url": { "type": "string" },
-        "type": { "type": "string", "enum": ["LINK", "DRIVE", "PDF", "VIDEO"] },
+        "type": { "type": "string", "enum": ["LINK", "DRIVE", "PDF", "VIDEO", "DOCUMENT"] },
         "classId": { "type": "string" },
         "teacherId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "url", "type", "classId", "teacherId"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "Conversation between users",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "participantNames": { "type": "object" }
+      },
+      "required": ["participants", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual message in a chat",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "senderName", "text", "createdAt"]
     }
   },
   "firestore": {
@@ -109,6 +133,9 @@
     "/payments/{paymentId}": { "schema": "Payment", "description": "Tuition payments" },
     "/grades/{gradeId}": { "schema": "Grade", "description": "Student grades" },
     "/attendance/{attendanceId}": { "schema": "Attendance", "description": "Daily attendance records" },
-    "/materials/{materialId}": { "schema": "Material", "description": "Class materials" }
+    "/materials/{materialId}": { "schema": "Material", "description": "Class materials" },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Individual chat sessions" },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Individual chat messages" },
+    "/classChats/{classId}/messages/{messageId}": { "schema": "Message", "description": "Group chat messages for a specific class" }
   }
 }
