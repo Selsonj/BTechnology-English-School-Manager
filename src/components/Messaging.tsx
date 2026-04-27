@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   collection, 
   query, 
+  query as firestoreQuery,
   where, 
   orderBy, 
   onSnapshot, 
@@ -11,12 +12,15 @@ import {
   serverTimestamp, 
   limit,
   setDoc,
-  getDocs
+  getDocs,
+  increment
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { Chat, ChatMessage, UserProfile, Student } from '../types';
-import { Send, User, MessageCircle, ChevronLeft, Search, CheckCheck, Plus } from 'lucide-react';
+import { Send, User, MessageCircle, ChevronLeft, Search, CheckCheck, Plus, Play, Pause } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { VoiceRecorder } from './VoiceRecorder';
 
 interface MessagingProps {
   userProfile: UserProfile;
@@ -118,31 +122,50 @@ export function Messaging({ userProfile, students }: MessagingProps) {
           )}
 
           {chats.map(chat => {
-            const otherId = chat.participants.find(p => p !== userProfile.id);
+            const myId = (userProfile.role === 'STUDENT' && userProfile.studentId) ? userProfile.studentId : userProfile.id;
+            const otherId = chat.participants.find(p => p !== myId);
             const otherName = otherId ? chat.participantNames[otherId] : 'Utilizador';
+            const unreadCount = chat.unreadCount?.[myId] || 0;
             
             return (
               <button
                 key={chat.id}
-                onClick={() => setSelectedChat(chat)}
+                onClick={async () => {
+                  setSelectedChat(chat);
+                  if (unreadCount > 0) {
+                    await updateDoc(doc(db, 'chats', chat.id), {
+                      [`unreadCount.${myId}`]: 0
+                    });
+                  }
+                }}
                 className={`w-full p-4 flex items-center gap-3 border-b border-[#003366] border-opacity-10 transition-all ${
                   selectedChat?.id === chat.id 
                     ? 'bg-[#003366] text-white' 
                     : 'hover:bg-[#003366] hover:bg-opacity-5'
                 }`}
               >
-                <div className={`w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0 ${
+                <div className={`w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0 relative ${
                   selectedChat?.id === chat.id 
                     ? 'bg-white text-[#003366]' 
                     : 'bg-[#003366] bg-opacity-10 text-[#003366]'
                 }`}>
                   {otherName.charAt(0)}
+                  {unreadCount > 0 && selectedChat?.id !== chat.id && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-white">
+                      {unreadCount}
+                    </span>
+                  )}
                 </div>
-                <div className="text-left overflow-hidden">
-                  <p className={`text-sm font-bold truncate ${selectedChat?.id === chat.id ? 'text-white' : 'text-[#003366]'}`}>{otherName}</p>
+                <div className="text-left overflow-hidden flex-1">
+                  <div className="flex justify-between items-center gap-2">
+                    <p className={`text-sm font-bold truncate ${selectedChat?.id === chat.id ? 'text-white' : 'text-[#003366]'}`}>{otherName}</p>
+                    {unreadCount > 0 && selectedChat?.id !== chat.id && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                    )}
+                  </div>
                   <p className={`text-[10px] font-mono truncate uppercase ${
                     selectedChat?.id === chat.id ? 'text-white opacity-80' : 'text-[#003366] opacity-80'
-                  }`}>
+                  } ${unreadCount > 0 && selectedChat?.id !== chat.id ? 'font-bold opacity-100' : ''}`}>
                     {chat.lastMessage || 'Nova conversa'}
                   </p>
                 </div>
@@ -252,6 +275,42 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
     }
   }, [messages]);
 
+  const handleSendAudio = async (blob: Blob) => {
+    setIsSending(true);
+    const senderId = (currentUser.role === 'STUDENT' && currentUser.studentId) ? currentUser.studentId : currentUser.id;
+    const otherId = chat.participants.find(p => p !== senderId);
+
+    try {
+      const audioFileName = `chats/${chat.id}/${Date.now()}.webm`;
+      const audioRef = ref(storage, audioFileName);
+      
+      const uploadResult = await uploadBytes(audioRef, blob);
+      const audioUrl = await getDownloadURL(uploadResult.ref);
+
+      await addDoc(collection(db, 'chats', chat.id, 'messages'), {
+        senderId,
+        senderName: currentUser.name,
+        audioUrl,
+        createdAt: serverTimestamp(),
+      });
+
+      const updateData: any = {
+        lastMessage: '🎵 Áudio',
+        updatedAt: serverTimestamp(),
+      };
+      if (otherId) {
+        updateData[`unreadCount.${otherId}`] = increment(1);
+      }
+      
+      await updateDoc(doc(db, 'chats', chat.id), updateData);
+    } catch (error) {
+      console.error("Error sending audio:", error);
+      alert("Erro ao enviar áudio.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
@@ -262,6 +321,8 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
 
     const senderId = (currentUser.role === 'STUDENT' && currentUser.studentId) ? currentUser.studentId : currentUser.id;
 
+    const otherId = chat.participants.find(p => p !== senderId);
+
     try {
       // Add message to subcollection
       await addDoc(collection(db, 'chats', chat.id, 'messages'), {
@@ -271,11 +332,16 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
         createdAt: serverTimestamp(),
       });
 
-      // Update chat metadata
-      await updateDoc(doc(db, 'chats', chat.id), {
+      // Update chat metadata and increment unread count for other person
+      const updateData: any = {
         lastMessage: text,
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (otherId) {
+        updateData[`unreadCount.${otherId}`] = increment(1);
+      }
+      
+      await updateDoc(doc(db, 'chats', chat.id), updateData);
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
@@ -348,7 +414,12 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
                       ? 'bg-white text-[#003366] shadow-[3px_3px_0px_0px_rgba(0,0,0,0.3)]' 
                       : 'bg-blue-100 text-[#003366] shadow-[3px_3px_0px_0px_rgba(0,0,0,0.2)]'
                   }`}>
-                    <p>{m.text}</p>
+                    {m.text && <p>{m.text}</p>}
+                    {m.audioUrl && (
+                      <div className="flex items-center gap-2 py-1">
+                        <AudioPlayer url={m.audioUrl} invert={isOwn} />
+                      </div>
+                    )}
                     <div className={`mt-1 flex items-center gap-1 text-[8px] font-mono justify-end font-bold opacity-60 text-[#003366]`}>
                       {m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                       {isOwn && <CheckCheck size={10} />}
@@ -363,7 +434,10 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
 
       {/* Input */}
       <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-[#003366] border-opacity-10">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {!newMessage.trim() && (
+            <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isSending} />
+          )}
           <input 
             type="text" 
             value={newMessage}
@@ -381,6 +455,54 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function AudioPlayer({ url, invert }: { url: string, invert?: boolean }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+  };
+
+  return (
+    <div className={`flex items-center gap-2 p-2 rounded min-w-[160px] ${invert ? 'bg-[#003366] text-white' : 'bg-[#003366] bg-opacity-10 text-[#003366]'}`}>
+      <audio 
+        ref={audioRef} 
+        src={url} 
+        onPlay={() => setIsPlaying(true)} 
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      <button 
+        type="button"
+        onClick={toggle}
+        className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 ${invert ? 'bg-white text-[#003366]' : 'bg-[#003366] text-white'}`}
+      >
+        {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+      </button>
+      <div className="flex flex-col flex-1">
+        <span className="text-[8px] font-mono font-bold uppercase mb-1">Mensagem de Áudio</span>
+        <div className="flex gap-0.5 h-3 items-end overflow-hidden">
+          {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15].map(i => (
+            <div 
+              key={i} 
+              className={`w-1 rounded-full ${invert ? 'bg-white' : 'bg-[#003366]'} ${isPlaying ? 'animate-pulse' : 'opacity-40'}`}
+              style={{ 
+                height: `${(Math.sin(i * 0.5) * 40 + 60)}%`,
+              }}
+            ></div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

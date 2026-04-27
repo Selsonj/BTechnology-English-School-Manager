@@ -85,12 +85,14 @@ export interface Chat {
   lastMessage?: string;
   updatedAt: any;
   participantNames: Record<string, string>;
+  unreadCount?: Record<string, number>;
 }
 
 export interface ChatMessage {
   id: string;
   senderId: string;
   senderName: string;
-  text: string;
+  text?: string;
+  audioUrl?: string;
   createdAt: any;
 }

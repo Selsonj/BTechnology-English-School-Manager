@@ -54,8 +54,10 @@ import {
   Clock,
   Menu,
   X,
+  User,
   Trash2,
   UserCheck,
+  Shield,
   FileText,
   Link2,
   ExternalLink,
@@ -63,13 +65,15 @@ import {
   Video,
   FileDown,
   Sparkles,
-  MessageCircle
+  MessageCircle,
+  Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, Class, Payment, UserProfile, Role, EnglishLevel, PaymentStatus, Grade, Enrollment, Attendance, Material } from './types';
 import { AIConversationSimulator } from './components/AIConversationSimulator';
 import { Messaging } from './components/Messaging';
 import { ClassChat } from './components/ClassChat';
+import { LearningPortal, PlacementTest, RegistrationForm } from './components/OnlineCourseSystem';
 
 // --- Helpers ---
 
@@ -190,18 +194,9 @@ const LoadingScreen = () => (
   </div>
 );
 
-const LoginScreen = () => {
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed:", error);
-    }
-  };
-
+const LoginScreen = ({ onStartOnboarding, onLogin }: { onStartOnboarding: (step: 'TEST' | 'REGISTRATION') => void, onLogin: () => void }) => {
   return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-white p-6">
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-white p-6 overflow-y-auto">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -212,19 +207,38 @@ const LoginScreen = () => {
           <p className="text-sm font-mono uppercase tracking-widest opacity-60">English School Manager</p>
         </div>
         
-        <div className="p-8 border border-[#003366] bg-white shadow-[8px_8px_0px_0px_rgba(0,51,102,1)]">
-          <p className="mb-8 text-sm opacity-80">Acesse o painel administrativo para gerir alunos, turmas e finanças.</p>
-          <button 
-            onClick={handleLogin}
-            className="w-full py-3 px-4 bg-[#003366] text-white font-mono text-sm uppercase tracking-wider hover:bg-opacity-90 transition-all flex items-center justify-center gap-3"
-          >
-            Entrar com Google
-          </button>
+        <div className="p-8 border border-[#003366] bg-white shadow-[8px_8px_0px_0px_rgba(0,51,102,1)] space-y-6">
+          <p className="text-sm opacity-80">Acesse o painel do aluno ou a plataforma administrativa.</p>
+          <div className="space-y-4">
+            <button 
+              onClick={onLogin}
+              className="w-full py-3 px-4 bg-[#003366] text-white font-mono text-sm uppercase tracking-wider hover:bg-opacity-90 transition-all flex items-center justify-center gap-3"
+            >
+              <User size={18} />
+              Entrar na Minha Conta
+            </button>
+            
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
+              <div className="relative flex justify-center text-[10px] uppercase font-mono"><span className="bg-white px-2 text-gray-400">Ou quer ser nosso aluno?</span></div>
+            </div>
+
+            <button 
+              onClick={() => onStartOnboarding('TEST')}
+              className="w-full py-3 px-4 border-2 border-[#003366] text-[#003366] font-mono text-sm uppercase tracking-wider hover:bg-[#003366] hover:text-white transition-all flex items-center justify-center gap-3"
+            >
+              <Sparkles size={18} />
+              Novas Inscrições Online
+            </button>
+          </div>
         </div>
       </motion.div>
     </div>
   );
 };
+
+// --- Constants ---
+const ADMIN_EMAILS = ["upgradeangola@gmail.com", "hospitalsanatoriodonamibe@gmail.com", "joaoselson@gmail.com", "selsfernando@gmail.com"];
 
 // --- Main App ---
 
@@ -242,6 +256,54 @@ export default function App() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [unreadTotal, setUnreadTotal] = useState(0);
+  const [onboardingStep, setOnboardingStep] = useState<'LOGIN' | 'TEST' | 'REGISTRATION'>('LOGIN');
+  const [detectedLevel, setDetectedLevel] = useState<string>('');
+  const [onlineRegistrations, setOnlineRegistrations] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [staffAccess, setStaffAccess] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (profile?.role === 'ADMIN') {
+      const q = query(collection(db, 'onlineRegistrations'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(q, (snap) => {
+        setOnlineRegistrations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'onlineRegistrations');
+      });
+
+      const unsubUsers = onSnapshot(query(collection(db, 'users')), (snap) => {
+        setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
+      });
+
+      const unsubStaff = onSnapshot(query(collection(db, 'staff_access')), (snap) => {
+        setStaffAccess(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+
+      return () => {
+        unsub();
+        unsubUsers();
+        unsubStaff();
+      };
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    if (!user || !profile) return;
+    const myId = (profile.role === 'STUDENT' && profile.studentId) ? profile.studentId : profile.id;
+    const q = query(
+      collection(db, 'chats'),
+      where('participants', 'array-contains', myId)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const counts = snapshot.docs.map(d => {
+        const data = d.data();
+        return data.unreadCount?.[myId] || 0;
+      });
+      setUnreadTotal(counts.reduce((a, b) => a + b, 0));
+    });
+    return () => unsubscribe();
+  }, [user, profile]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -253,7 +315,35 @@ export default function App() {
           const profileSnap = await getDoc(profileRef);
           
           if (profileSnap.exists()) {
-            setProfile({ id: u.uid, ...profileSnap.data() } as UserProfile);
+            let role: Role = 'TEACHER';
+            let studentId: string | undefined = undefined;
+
+            const adminEmails = ADMIN_EMAILS;
+            const currentData = profileSnap.data();
+            
+            // Priority 1: Hardcoded Master Admins
+            if (u.email && adminEmails.includes(u.email.toLowerCase())) {
+              role = 'ADMIN';
+            } else {
+              // Priority 2: Check staff_access collection for emails
+              if (u.email) {
+                const staffSnap = await getDoc(doc(db, 'staff_access', u.email.toLowerCase()));
+                if (staffSnap.exists()) {
+                  role = staffSnap.data().role as Role;
+                } else {
+                  role = currentData.role as Role;
+                }
+              } else {
+                role = currentData.role as Role;
+              }
+            }
+
+            setProfile({ id: u.uid, ...currentData, role } as UserProfile);
+            
+            // Sync role to DB if it changed
+            if (role !== currentData.role) {
+              await updateDoc(profileRef, { role: role });
+            }
           } else {
             // Check if user is a student in the system
             const studentsRef = collection(db, 'students');
@@ -263,12 +353,20 @@ export default function App() {
             let role: Role = 'TEACHER';
             let studentId: string | undefined = undefined;
 
-            const adminEmails = ["upgradeangola@gmail.com", "hospitalsanatoriodonamibe@gmail.com", "joaoselson@gmail.com"];
-            if (u.email && adminEmails.includes(u.email)) {
-              role = 'ADMIN';
-            } else if (!studentQuerySnap.empty) {
-              role = 'STUDENT';
-              studentId = studentQuerySnap.docs[0].id;
+            // Check staff_access for the new user
+            if (u.email) {
+              const staffSnap = await getDoc(doc(db, 'staff_access', u.email.toLowerCase()));
+              if (staffSnap.exists()) {
+                role = staffSnap.data().role as Role;
+              } else {
+                const adminEmails = ADMIN_EMAILS;
+                if (adminEmails.includes(u.email.toLowerCase())) {
+                  role = 'ADMIN';
+                } else if (!studentQuerySnap.empty) {
+                  role = 'STUDENT';
+                  studentId = studentQuerySnap.docs[0].id;
+                }
+              }
             }
 
             const newProfile = {
@@ -384,7 +482,38 @@ export default function App() {
   }, [user, profile]);
 
   if (loading) return <LoadingScreen />;
-  if (!user) return <LoginScreen />;
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+  
+  if (!user) {
+    if (onboardingStep === 'LOGIN') {
+      return <LoginScreen onLogin={handleLogin} onStartOnboarding={setOnboardingStep} />;
+    }
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-white overflow-y-auto">
+        <div className="w-full max-w-4xl">
+          {onboardingStep === 'TEST' ? (
+            <PlacementTest onComplete={(lvl) => { setDetectedLevel(lvl); setOnboardingStep('REGISTRATION'); }} />
+          ) : (
+            <RegistrationForm level={detectedLevel} onBack={() => setOnboardingStep('TEST')} />
+          )}
+          <button 
+            onClick={() => setOnboardingStep('LOGIN')} 
+            className="mt-8 text-xs font-mono uppercase text-gray-400 hover:text-[#003366] block mx-auto"
+          >
+            ← Voltar ao Início
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = () => signOut(auth);
 
@@ -423,6 +552,7 @@ export default function App() {
             {(profile?.role === 'STUDENT' ? [
               { id: 'overview', label: 'Painel', icon: TrendingUp },
               { id: 'messages', label: 'Mensagens', icon: MessageCircle },
+              { id: 'my-courses', label: 'Cursos Online', icon: Play },
               { id: 'ai-practice', label: 'IA Conversação', icon: Sparkles },
               { id: 'my-record', label: 'Minhas Aulas', icon: BookOpen },
               { id: 'my-grades', label: 'Meu Progresso', icon: GraduationCap },
@@ -435,6 +565,8 @@ export default function App() {
               { id: 'progress', label: 'Progresso', icon: GraduationCap },
               { id: 'attendance', label: 'Chamada', icon: UserCheck },
               { id: 'finance', label: 'Financeiro', icon: CreditCard },
+              { id: 'approvals', label: 'Inscrições', icon: CheckCircle2 },
+              { id: 'staff', label: 'Equipa', icon: Shield },
               { id: 'ai-practice', label: 'IA Practice (Demo)', icon: Sparkles },
             ]).map((item) => (
               <button
@@ -443,7 +575,7 @@ export default function App() {
                   setActiveTab(item.id);
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-mono uppercase tracking-wider transition-all ${
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-mono uppercase tracking-wider transition-all relative ${
                   activeTab === item.id 
                     ? 'bg-[#003366] text-white' 
                     : 'hover:bg-[#003366] hover:text-white opacity-80 hover:opacity-100 text-[#003366]'
@@ -451,6 +583,11 @@ export default function App() {
               >
                 <item.icon size={18} />
                 {item.label}
+                {item.id === 'messages' && unreadTotal > 0 && (
+                  <span className="absolute right-4 w-5 h-5 bg-red-600 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-white font-bold">
+                    {unreadTotal}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -489,6 +626,7 @@ export default function App() {
                 <>
                   {activeTab === 'overview' && <StudentOverview profile={profile} students={students} classes={classes} attendances={attendances} payments={payments} grades={grades} />}
                   {activeTab === 'messages' && <Messaging userProfile={profile} students={[]} />}
+                  {activeTab === 'my-courses' && <LearningPortal enrollment={{ levelDetected: (profile as any).level || 'INTERMEDIATE' }} />}
                   {activeTab === 'ai-practice' && <AIConversationSimulator profile={profile} />}
                   {activeTab === 'my-record' && <StudentClasses profile={profile} enrollments={enrollments} classes={classes} attendances={attendances} materials={materials} />}
                   {activeTab === 'my-grades' && <StudentProgress profile={profile} grades={grades} />}
@@ -500,7 +638,26 @@ export default function App() {
                   {activeTab === 'students' && <StudentsManager students={students} enrollments={enrollments} />}
                   {activeTab === 'messages' && <Messaging userProfile={profile} students={students} />}
                   {activeTab === 'classes' && <ClassesManager classes={classes} students={students} enrollments={enrollments} materials={materials} profile={profile} />}
-                  {activeTab === 'finance' && <FinanceManager payments={payments} students={students} />}
+                  { activeTab === 'finance' && <FinanceManager payments={payments} students={students} />}
+                  {activeTab === 'approvals' && (
+                    <div className="space-y-8">
+                      <header>
+                        <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">Inscrições Online</h1>
+                        <p className="text-sm font-mono opacity-50 uppercase mt-2">Gestão de Novos Alunos</p>
+                      </header>
+                      <div className="grid grid-cols-1 gap-4">
+                        {onlineRegistrations.length === 0 && (
+                          <div className="p-12 border-2 border-dashed border-[#003366] border-opacity-10 text-center">
+                            <p className="text-sm font-mono opacity-40 uppercase">Nenhuma inscrição pendente.</p>
+                          </div>
+                        )}
+                        {onlineRegistrations.map((reg: any) => (
+                          <RegistrationItem key={reg.id} reg={reg} db={db} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {activeTab === 'staff' && <StaffManager users={users} staffAccess={staffAccess} />}
                   {activeTab === 'progress' && <ProgressManager students={students} grades={grades} />}
                   {activeTab === 'attendance' && <AttendanceManager classes={classes} students={students} enrollments={enrollments} attendances={attendances} />}
                   {activeTab === 'ai-practice' && <AIConversationSimulator profile={profile} />}
@@ -511,6 +668,353 @@ export default function App() {
         </main>
       </div>
     </ErrorBoundary>
+  );
+}
+
+function RegistrationItem({ reg, db }: { reg: any, db: any }) {
+  const [isApproving, setIsApproving] = useState(false);
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [showConfirmApproval, setShowConfirmApproval] = useState(false);
+
+  return (
+    <>
+      <div className="p-6 border border-[#003366] border-opacity-10 bg-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 group">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-[#003366]">{reg.name}</h3>
+            <span className="text-[10px] font-mono bg-[#003366] text-white px-2 py-0.5">{reg.levelDetected}</span>
+            {reg.status === 'PENDING' && <span className="text-[8px] font-mono border border-yellow-500 text-yellow-600 px-1 font-bold">AGUARDANDO</span>}
+            {reg.status === 'APPROVED' && <span className="text-[8px] font-mono border border-green-500 text-green-600 px-1 font-bold">APROVADO</span>}
+          </div>
+          <p className="text-xs opacity-60 font-mono">{reg.email} • {reg.phone}</p>
+        </div>
+        <div className="flex items-center gap-3 relative">
+          {showConfirmApproval && (
+            <div className="absolute bottom-full right-0 mb-2 w-64 p-3 bg-white border border-red-600 shadow-xl z-20 text-[10px] font-mono">
+              <p className="mb-2 text-red-600 font-bold uppercase">Confirmar aprovação de {reg.name}?</p>
+              <div className="flex gap-2">
+                <button 
+                  disabled={isApproving}
+                  onClick={async () => {
+                    setIsApproving(true);
+                    try {
+                      const studentRef = await addDoc(collection(db, 'students'), {
+                        name: reg.name,
+                        email: reg.email,
+                        phone: reg.phone,
+                        status: 'ACTIVE',
+                        level: reg.levelDetected,
+                        createdAt: serverTimestamp()
+                      });
+                      await updateDoc(doc(db, 'onlineRegistrations', reg.id), { 
+                        status: 'APPROVED',
+                        studentId: studentRef.id 
+                      });
+                      setShowConfirmApproval(false);
+                      alert(`Matrícula de ${reg.name} aprovada com sucesso!`);
+                    } catch (err) {
+                      console.error("Erro na aprovação:", err);
+                      alert(`Erro ao aprovar matrícula: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+                    } finally {
+                      setIsApproving(false);
+                    }
+                  }}
+                  className="px-2 py-1 bg-red-600 text-white uppercase font-bold"
+                >
+                  {isApproving ? '...' : 'Sim, Aprovar'}
+                </button>
+                <button onClick={() => setShowConfirmApproval(false)} className="px-2 py-1 bg-gray-200 uppercase">Não</button>
+              </div>
+            </div>
+          )}
+
+          <button 
+            onClick={() => {
+              if (reg.proofData) {
+                setShowProofModal(true);
+              } else {
+                alert("Nenhum comprovativo foi anexado.");
+              }
+            }}
+            className="px-4 py-2 bg-gray-100 text-[#003366] text-[10px] font-mono uppercase tracking-widest hover:bg-[#003366] hover:text-white transition-all">
+            Ver Talão
+          </button>
+          {reg.status === 'PENDING' && (
+            <button 
+              onClick={() => setShowConfirmApproval(true)}
+              disabled={isApproving}
+              className="px-4 py-2 bg-[#003366] text-white text-[10px] font-mono uppercase tracking-widest hover:opacity-90 shadow-[4px_4px_0px_0px_rgba(0,51,102,0.2)]"
+            >
+              {isApproving ? 'Processando...' : 'Aprovar'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Proof Modal */}
+      <AnimatePresence>
+        {showProofModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowProofModal(false)}
+              className="absolute inset-0 bg-black bg-opacity-80"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-white max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            >
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-[#003366] text-white">
+                <h3 className="font-mono text-[10px] uppercase tracking-widest">Comprovativo: {reg.name}</h3>
+                <button onClick={() => setShowProofModal(false)} className="hover:opacity-70">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 bg-gray-50 flex items-center justify-center">
+                <img 
+                  src={reg.proofData} 
+                  alt="Comprovativo" 
+                  className="max-w-full h-auto shadow-lg"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+function StaffManager({ users, staffAccess }: { users: UserProfile[], staffAccess: any[] }) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<Role>('TEACHER');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'REMOVE' | 'ROLE' | 'DISABLE' | null>(null);
+
+  const handleAddStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setIsSubmitting(true);
+    try {
+      await setDoc(doc(db, 'staff_access', email.toLowerCase().trim()), {
+        email: email.toLowerCase().trim(),
+        role,
+        createdAt: serverTimestamp()
+      });
+      setEmail('');
+      alert("Sucesso: Acesso concedido para " + email);
+    } catch (err) {
+      alert("Erro ao adicionar membro: " + (err instanceof Error ? err.message : 'Erro desconhecido'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAction = async (id: string, action: 'REMOVE' | 'ROLE' | 'DISABLE', data?: any) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    console.log(`Executing ${action} for ${id}`);
+    try {
+      if (action === 'REMOVE') {
+        const docRef = doc(db, 'staff_access', id);
+        await deleteDoc(docRef);
+        alert("Acesso removido com sucesso.");
+      } else if (action === 'ROLE') {
+        const newRole = data.role === 'ADMIN' ? 'TEACHER' : 'ADMIN';
+        if (data.email) {
+          const staffRef = doc(db, 'staff_access', data.email.toLowerCase().trim());
+          await setDoc(staffRef, {
+            role: newRole,
+            email: data.email.toLowerCase().trim()
+          }, { merge: true });
+        }
+        const userRef = doc(db, 'users', id);
+        await updateDoc(userRef, { role: newRole });
+        alert("Cargo alterado para " + newRole);
+      } else if (action === 'DISABLE') {
+        if (data.email) {
+          const staffRef = doc(db, 'staff_access', data.email.toLowerCase().trim());
+          await deleteDoc(staffRef);
+        }
+        const userRef = doc(db, 'users', id);
+        await updateDoc(userRef, { role: 'STUDENT' });
+        alert("Utilizador removido da equipa.");
+      }
+      setConfirmId(null);
+      setConfirmAction(null);
+    } catch (err) {
+      console.error(`StaffManager Action Error (${action}):`, err);
+      alert(`Erro na operação ${action}: ` + (err instanceof Error ? err.message : 'Erro desconhecido'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-12">
+      <header>
+        <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">Equipa</h1>
+        <p className="text-sm font-mono opacity-50 uppercase mt-2">Gestão de Administradores e Professores</p>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div className="lg:col-span-1">
+          <form onSubmit={handleAddStaff} className="p-8 border border-[#003366] bg-white shadow-[8px_8px_0px_0px_rgba(0,51,102,1)] space-y-6">
+            <h3 className="text-xs font-mono uppercase tracking-widest font-bold">Adicionar Membro</h3>
+            <div className="space-y-1">
+              <label className="text-[10px] font-mono uppercase opacity-50">E-mail do Google</label>
+              <input 
+                required
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full p-2 border-b-2 border-[#003366] border-opacity-20 focus:border-opacity-100 outline-none text-sm"
+                placeholder="exemplo@gmail.com"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-mono uppercase opacity-50">Cargo</label>
+              <select 
+                value={role}
+                onChange={e => setRole(e.target.value as Role)}
+                className="w-full p-2 border-b-2 border-[#003366] border-opacity-20 focus:border-opacity-100 outline-none text-sm bg-white"
+              >
+                <option value="TEACHER">Professor</option>
+                <option value="ADMIN">Administrador</option>
+              </select>
+            </div>
+            <button 
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-[#003366] text-white font-mono uppercase text-xs tracking-widest hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {isSubmitting ? '...' : 'Conceder Acesso'}
+            </button>
+          </form>
+        </div>
+
+        <div className="lg:col-span-2 space-y-12">
+          <section>
+            <h3 className="text-xs font-mono uppercase tracking-widest border-b border-[#003366] pb-2 mb-4">Acessos Autorizados (Pré-Cadastro)</h3>
+            <div className="grid grid-cols-1 gap-4">
+              {staffAccess.length === 0 && (
+                <p className="text-xs font-mono opacity-50 py-4 uppercase">Nenhum acesso manual configurado.</p>
+              )}
+              {staffAccess.map(item => (
+                <div key={item.id} className="p-4 border border-[#003366] border-opacity-10 bg-white flex justify-between items-center group">
+                  <div>
+                    <p className="text-sm font-bold">{item.email}</p>
+                    <p className="text-[10px] font-mono opacity-50 uppercase">{item.role}</p>
+                  </div>
+                  
+                  {confirmId === item.id && confirmAction === 'REMOVE' ? (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleAction(item.id, 'REMOVE')}
+                        disabled={isSubmitting}
+                        className="px-2 py-1 bg-red-600 text-white text-[10px] font-mono uppercase font-bold disabled:opacity-50"
+                      >
+                        {isSubmitting ? '...' : 'Confirmar'}
+                      </button>
+                      <button 
+                        onClick={() => setConfirmId(null)}
+                        className="px-2 py-1 bg-gray-200 text-[10px] font-mono uppercase"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        setConfirmId(item.id);
+                        setConfirmAction('REMOVE');
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-mono uppercase tracking-widest border-b border-[#003366] pb-2 mb-4">Utilizadores da Equipa Ativos</h3>
+            <div className="grid grid-cols-1 gap-4">
+              {users.filter(u => u.role !== 'STUDENT').map(u => (
+                <div key={u.id} className="p-4 border border-[#003366] border-opacity-10 bg-white flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-[#003366] text-white flex items-center justify-center text-sm font-mono ring-2 ring-[#003366] ring-offset-2">
+                      {u.name?.charAt(0) || '?'}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">{u.name}</p>
+                      <p className="text-[10px] font-mono opacity-50 uppercase">{u.email}</p>
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase ${u.role === 'ADMIN' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {u.role}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    {confirmId === u.id ? (
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => handleAction(u.id, confirmAction!, u)}
+                          disabled={isSubmitting}
+                          className="px-2 py-1 bg-[#003366] text-white text-[10px] font-mono uppercase font-bold disabled:opacity-50"
+                        >
+                          {isSubmitting ? '...' : 'Confirmar'}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setConfirmId(null);
+                            setConfirmAction(null);
+                          }}
+                          className="px-2 py-1 bg-gray-200 text-[10px] font-mono uppercase"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button 
+                          onClick={() => {
+                            setConfirmId(u.id);
+                            setConfirmAction('ROLE');
+                          }}
+                          className="px-3 py-1 border border-[#003366] text-[#003366] text-[10px] font-mono uppercase hover:bg-[#003366] hover:text-white transition-all"
+                        >
+                          Alterar Cargo
+                        </button>
+                        {u.email && !ADMIN_EMAILS.includes(u.email.toLowerCase()) && (
+                          <button 
+                            onClick={() => {
+                              setConfirmId(u.id);
+                              setConfirmAction('DISABLE');
+                            }}
+                            className="px-3 py-1 border border-red-600 text-red-600 text-[10px] font-mono uppercase hover:bg-red-600 hover:text-white transition-all"
+                          >
+                            Desativar
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 

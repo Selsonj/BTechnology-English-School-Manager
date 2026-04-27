@@ -8,10 +8,12 @@ import {
   serverTimestamp, 
   limit
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { ChatMessage, UserProfile } from '../types';
-import { Send, MessageSquare, CheckCheck, User } from 'lucide-react';
+import { Send, MessageSquare, CheckCheck, User, Play, Pause } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { VoiceRecorder } from './VoiceRecorder';
 
 interface ClassChatProps {
   classId: string;
@@ -47,6 +49,31 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isOpen]);
+
+  const handleSendAudio = async (blob: Blob) => {
+    if (!userProfile) return;
+    setIsSending(true);
+
+    try {
+      const audioFileName = `class_chats/${classId}/${Date.now()}.webm`;
+      const audioRef = ref(storage, audioFileName);
+      
+      const uploadResult = await uploadBytes(audioRef, blob);
+      const audioUrl = await getDownloadURL(uploadResult.ref);
+
+      await addDoc(collection(db, 'classChats', classId, 'messages'), {
+        senderId: userProfile.id,
+        senderName: userProfile.name,
+        audioUrl,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Error sending audio to class chat:", error);
+      alert("Erro ao enviar áudio.");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +184,12 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
                         ? 'bg-yellow-50 text-[#003366] border-l-4 border-yellow-400 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.2)]'
                         : 'bg-blue-100 text-[#003366] shadow-[3px_3px_0px_0px_rgba(0,0,0,0.2)]'
                   }`}>
-                    <p>{m.text}</p>
+                    {m.text && <p>{m.text}</p>}
+                    {m.audioUrl && (
+                      <div className="mt-2">
+                        <AudioPlayer url={m.audioUrl} invert={isOwn} />
+                      </div>
+                    )}
                     <div className={`mt-1 flex items-center gap-1 text-[8px] font-mono justify-end font-bold ${isOwn || isTeacherMessage || !isOwn ? 'opacity-60 text-[#003366]' : 'opacity-60 text-white'}`}>
                       {m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                       {isOwn && <CheckCheck size={10} />}
@@ -171,7 +203,10 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
       </div>
 
       <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-[#003366] border-opacity-10">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {!newMessage.trim() && (
+            <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isSending} />
+          )}
           <input 
             type="text" 
             value={newMessage}
@@ -189,6 +224,49 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function AudioPlayer({ url, invert }: { url: string, invert?: boolean }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!audioRef.current) return;
+    if (isPlaying) audioRef.current.pause();
+    else audioRef.current.play();
+  };
+
+  return (
+    <div className={`flex items-center gap-2 p-2 rounded min-w-[140px] ${invert ? 'bg-[#003366] text-white' : 'bg-[#003366] bg-opacity-10 text-[#003366]'}`}>
+      <audio 
+        ref={audioRef} 
+        src={url} 
+        onPlay={() => setIsPlaying(true)} 
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      <button 
+        type="button"
+        onClick={toggle}
+        className={`w-7 h-7 flex items-center justify-center rounded-full flex-shrink-0 ${invert ? 'bg-white text-[#003366]' : 'bg-[#003366] text-white'}`}
+      >
+        {isPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+      </button>
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <span className="text-[7px] font-mono font-bold uppercase mb-1">Áudio da Turma</span>
+        <div className="flex gap-0.5 h-3 items-end">
+          {[1,2,3,4,5,6,7,8,9,10].map(i => (
+            <div 
+              key={i} 
+              className={`w-0.5 rounded-full ${invert ? 'bg-white' : 'bg-[#003366]'} ${isPlaying ? 'animate-pulse' : 'opacity-40'}`}
+              style={{ height: `${(Math.sin(i * 0.7) * 30 + 70)}%` }}
+            ></div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

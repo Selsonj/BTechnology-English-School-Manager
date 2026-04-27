@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, RefreshCw, MessageSquare, ChevronLeft, Sparkles } from 'lucide-react';
+import { Send, User, Bot, RefreshCw, MessageSquare, ChevronLeft, Sparkles, Play, Pause } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { startConversation, scenarios } from '../services/geminiService';
 import { UserProfile } from '../types';
+import { VoiceRecorder } from './VoiceRecorder';
 
 interface Message {
   role: 'user' | 'model';
   text: string;
+  audioUrl?: string;
 }
 
 export function AIConversationSimulator({ profile }: { profile: UserProfile | null }) {
@@ -39,7 +41,8 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
       setMessages([{ role: 'model', text: response.text }]);
     } catch (error) {
       console.error("Error starting chat:", error);
-      setMessages([{ role: 'model', text: "Sorry, I'm having trouble connecting to the AI tutor right now. Please try again later." }]);
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+      setMessages([{ role: 'model', text: `Desculpe, estou com problemas para me conectar ao tutor de IA. Erro: ${errorMessage}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -59,8 +62,48 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
       setMessages(prev => [...prev, { role: 'model', text: response.text }]);
     } catch (error) {
       console.error("Error sending message:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "I'm sorry, I encountered an error. Could you repeat that?" }]);
+      setMessages(prev => [...prev, { role: 'model', text: "Desculpe, encontrei um erro ao processar sua mensagem. Poderia repetir?" }]);
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendAudio = async (blob: Blob) => {
+    if (isLoading || !chatSession) return;
+    setIsLoading(true);
+
+    try {
+      // 1. Create a local URL for the UI
+      const audioUrl = URL.createObjectURL(blob);
+      setMessages(prev => [...prev, { role: 'user', text: "🎤 (Voz)", audioUrl }]);
+
+      // 2. Convert Blob to Base64 for Gemini
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64data = reader.result?.toString().split(',')[1];
+        if (!base64data) throw new Error("Base64 conversion failed");
+
+        try {
+          // Send to Gemini as a part
+          // Note: The SDK might require specific format for multimodel
+          const response = await chatSession.sendMessage({
+            parts: [
+              { text: "User sent an audio message. Please transcribe and respond to it." },
+              { inlineData: { data: base64data, mimeType: blob.type } }
+            ]
+          });
+          setMessages(prev => [...prev, { role: 'model', text: response.text }]);
+        } catch (error) {
+          console.error("Gemini Audio Error:", error);
+          setMessages(prev => [...prev, { role: 'model', text: "Desculpe, não consegui processar seu áudio. Tente novamente ou escreva por texto." }]);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+    } catch (error) {
+      console.error("Audio Processing Error:", error);
+      setMessages(prev => [...prev, { role: 'model', text: "Erro ao processar áudio." }]);
       setIsLoading(false);
     }
   };
@@ -162,6 +205,11 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
                   }`}
                 >
                   {m.text}
+                  {m.audioUrl && (
+                    <div className="mt-2 min-w-[200px]">
+                      <AudioPlayer url={m.audioUrl} />
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -193,7 +241,10 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
         onSubmit={handleSendMessage}
         className="p-4 bg-white border-t border-[#003366]"
       >
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {!inputValue.trim() && (
+            <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isLoading} />
+          )}
           <input
             type="text"
             value={inputValue}
@@ -214,6 +265,49 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
           Powered by BTechnology English AI
         </p>
       </form>
+    </div>
+  );
+}
+
+function AudioPlayer({ url }: { url: string }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!audioRef.current) return;
+    if (isPlaying) audioRef.current.pause();
+    else audioRef.current.play();
+  };
+
+  return (
+    <div className="flex items-center gap-2 p-1.5 bg-white bg-opacity-10 rounded border border-white border-opacity-20 min-w-[140px]">
+      <audio 
+        ref={audioRef} 
+        src={url} 
+        onPlay={() => setIsPlaying(true)} 
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      <button 
+        type="button"
+        onClick={toggle}
+        className="w-7 h-7 flex items-center justify-center bg-white text-[#003366] rounded-full flex-shrink-0"
+      >
+        {isPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+      </button>
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <span className="text-[7px] font-mono font-bold uppercase opacity-70 text-white">Prática Oral</span>
+        <div className="flex gap-0.5 h-2 items-end">
+          {[1,2,3,4,5,6,7,8,9,10].map(i => (
+            <div 
+              key={i} 
+              className={`w-0.5 bg-white rounded-full ${isPlaying ? 'animate-pulse' : 'opacity-30'}`}
+              style={{ height: `${Math.random() * 60 + 40}%` }}
+            ></div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "BTechnology - ESM",
   "description": "MVP para gestão de alunos, turmas, finanças e progresso acadêmico de uma escola de inglês.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": []
 }

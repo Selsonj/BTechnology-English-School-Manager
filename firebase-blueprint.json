@@ -100,6 +100,36 @@
       },
       "required": ["title", "url", "type", "classId", "teacherId"]
     },
+    "OnlineRegistration": {
+      "title": "Online Registration",
+      "description": "A new student application awaiting approval",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "levelDetected": { "type": "string", "enum": ["BEGINNER", "ELEMENTARY", "INTERMEDIATE", "UPPER_INTERMEDIATE", "ADVANCED", "PROFICIENT"] },
+        "proofUrl": { "type": "string", "description": "URL of the payment proof image" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "paymentReference": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "levelDetected", "status", "createdAt"]
+    },
+    "RecordedLesson": {
+      "title": "Recorded Lesson",
+      "description": "A pre-recorded video lesson for online courses",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "level": { "type": "string", "enum": ["BEGINNER", "ELEMENTARY", "INTERMEDIATE", "UPPER_INTERMEDIATE", "ADVANCED", "PROFICIENT"] },
+        "order": { "type": "number" },
+        "duration": { "type": "string" }
+      },
+      "required": ["title", "videoUrl", "level", "order"]
+    },
     "Chat": {
       "title": "Chat",
       "description": "Conversation between users",
@@ -108,7 +138,8 @@
         "participants": { "type": "array", "items": { "type": "string" } },
         "lastMessage": { "type": "string" },
         "updatedAt": { "type": "string", "format": "date-time" },
-        "participantNames": { "type": "object" }
+        "participantNames": { "type": "object" },
+        "unreadCount": { "type": "object", "description": "Map of userId to number of unread messages" }
       },
       "required": ["participants", "updatedAt"]
     },

@@ -2,6 +2,10 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
+if (!process.env.GEMINI_API_KEY) {
+  console.warn("GEMINI_API_KEY is not defined in the environment.");
+}
+
 export interface ChatMessage {
   role: 'user' | 'model' | 'system';
   content: string;
@@ -22,12 +26,18 @@ export const startConversation = async (studentName: string, studentLevel: strin
     5. Always response in English.
   `;
 
-  return ai.chats.create({
-    model: "gemini-3-flash-preview",
-    config: {
-      systemInstruction,
-    }
-  });
+  // Standard chat creation pattern with system instruction in config
+  try {
+    return ai.chats.create({
+      model: "gemini-flash-latest",
+      config: {
+        systemInstruction: systemInstruction
+      }
+    });
+  } catch (error) {
+    console.error("SDK initialization error:", error);
+    throw error;
+  }
 };
 
 export const scenarios = [
