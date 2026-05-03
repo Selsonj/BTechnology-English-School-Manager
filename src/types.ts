@@ -94,5 +94,6 @@ export interface ChatMessage {
   senderName: string;
   text?: string;
   audioUrl?: string;
+  imageUrl?: string;
   createdAt: any;
 }

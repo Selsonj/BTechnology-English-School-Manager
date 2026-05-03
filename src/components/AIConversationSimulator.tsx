@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, RefreshCw, MessageSquare, ChevronLeft, Sparkles, Play, Pause } from 'lucide-react';
+import { Send, User, Bot, RefreshCw, MessageSquare, ChevronLeft, Sparkles, Play, Pause, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { startConversation, scenarios } from '../services/geminiService';
 import { UserProfile } from '../types';
@@ -53,13 +53,13 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
     if (!inputValue.trim() || isLoading || !chatSession) return;
 
     const userMessage = inputValue.trim();
-    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
-    setInputValue('');
     setIsLoading(true);
+    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
 
     try {
       const response = await chatSession.sendMessage({ message: userMessage });
       setMessages(prev => [...prev, { role: 'model', text: response.text }]);
+      setInputValue('');
     } catch (error) {
       console.error("Error sending message:", error);
       setMessages(prev => [...prev, { role: 'model', text: "Desculpe, encontrei um erro ao processar sua mensagem. Poderia repetir?" }]);
@@ -106,6 +106,22 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
       setMessages(prev => [...prev, { role: 'model', text: "Erro ao processar áudio." }]);
       setIsLoading(false);
     }
+  };
+
+  const [deleteConfirmIdx, setDeleteConfirmIdx] = useState<number | null>(null);
+
+  const handleDeleteMessage = (e: React.MouseEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (deleteConfirmIdx !== index) {
+      setDeleteConfirmIdx(index);
+      setTimeout(() => setDeleteConfirmIdx(null), 3000);
+      return;
+    }
+
+    setMessages(prev => prev.filter((_, i) => i !== index));
+    setDeleteConfirmIdx(null);
   };
 
   const handleReset = () => {
@@ -191,25 +207,42 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
               key={idx}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex group ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`flex gap-3 max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border border-[#003366] border-opacity-20 ${m.role === 'user' ? 'bg-white' : 'bg-[#003366]'}`}>
                   {m.role === 'user' ? <User size={14} className="text-[#003366]" /> : <Bot size={14} className="text-white" />}
                 </div>
-                <div 
-                  className={`p-3 text-sm leading-relaxed ${
-                    m.role === 'user' 
-                      ? 'bg-[#003366] text-white shadow-[4px_4px_0px_0px_rgba(0,51,102,0.1)]' 
-                      : 'bg-white border border-[#003366] border-opacity-10 shadow-[4px_4px_0px_0px_rgba(0,51,102,0.05)] text-[#003366]'
-                  }`}
-                >
-                  {m.text}
-                  {m.audioUrl && (
-                    <div className="mt-2 min-w-[200px]">
-                      <AudioPlayer url={m.audioUrl} />
-                    </div>
-                  )}
+                <div>
+                  <div 
+                    className={`p-3 text-sm leading-relaxed relative ${
+                      m.role === 'user' 
+                        ? 'bg-[#003366] text-white shadow-[4px_4px_0px_0px_rgba(0,51,102,0.1)]' 
+                        : 'bg-white border border-[#003366] border-opacity-10 shadow-[4px_4px_0px_0px_rgba(0,51,102,0.05)] text-[#003366]'
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                    {m.audioUrl && (
+                      <div className="mt-2 min-w-[200px]">
+                        <AudioPlayer url={m.audioUrl} />
+                      </div>
+                    )}
+                  </div>
+                  <div className={`mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <button 
+                      onClick={(e) => handleDeleteMessage(e, idx)}
+                      className={`transition-all p-1.5 rounded flex items-center gap-1 shadow-sm border ${
+                        deleteConfirmIdx === idx 
+                          ? 'bg-red-600 text-white border-red-700' 
+                          : 'bg-white text-red-500 border-red-100 hover:bg-red-50'
+                      }`}
+                      title={deleteConfirmIdx === idx ? "Confirmar" : "Eliminar"}
+                      type="button"
+                    >
+                      <Trash2 size={14} />
+                      {deleteConfirmIdx === idx && <span className="text-[9px] font-bold uppercase">Apagar?</span>}
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -245,13 +278,13 @@ export function AIConversationSimulator({ profile }: { profile: UserProfile | nu
           {!inputValue.trim() && (
             <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isLoading} />
           )}
-          <input
-            type="text"
+          <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Type your message in English..."
             disabled={isLoading || !chatSession}
-            className="flex-1 p-3 border border-[#003366] text-sm focus:outline-none focus:ring-2 focus:ring-[#003366] transition-all font-sans"
+            rows={1}
+            className="flex-1 p-3 border border-[#003366] text-sm focus:outline-none focus:ring-2 focus:ring-[#003366] transition-all font-sans resize-none min-h-[44px] max-h-[120px]"
           />
           <button
             type="submit"

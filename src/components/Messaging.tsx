@@ -8,6 +8,7 @@ import {
   onSnapshot, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
   doc, 
   serverTimestamp, 
   limit,
@@ -16,9 +17,9 @@ import {
   increment
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db, storage, handleFirestoreError, OperationType } from '../firebase';
 import { Chat, ChatMessage, UserProfile, Student } from '../types';
-import { Send, User, MessageCircle, ChevronLeft, Search, CheckCheck, Plus, Play, Pause } from 'lucide-react';
+import { Send, User, MessageCircle, ChevronLeft, Search, CheckCheck, Plus, Play, Pause, Trash2, Image as ImageIcon, Camera, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VoiceRecorder } from './VoiceRecorder';
 
@@ -32,6 +33,7 @@ export function Messaging({ userProfile, students }: MessagingProps) {
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [chatDeleteConfirmId, setChatDeleteConfirmId] = useState<string | null>(null);
 
   // Listen to chats where current user is a participant
   useEffect(() => {
@@ -94,6 +96,29 @@ export function Messaging({ userProfile, students }: MessagingProps) {
     s.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (chatDeleteConfirmId !== chatId) {
+      setChatDeleteConfirmId(chatId);
+      setTimeout(() => setChatDeleteConfirmId(null), 3000);
+      return;
+    }
+    
+    try {
+      await deleteDoc(doc(db, 'chats', chatId));
+      if (selectedChat?.id === chatId) {
+        setSelectedChat(null);
+      }
+      setChatDeleteConfirmId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}`);
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-12rem)] flex border border-[#003366] bg-white shadow-[8px_8px_0px_0px_rgba(0,51,102,1)] overflow-hidden">
       {/* Sidebar */}
@@ -128,48 +153,63 @@ export function Messaging({ userProfile, students }: MessagingProps) {
             const unreadCount = chat.unreadCount?.[myId] || 0;
             
             return (
-              <button
-                key={chat.id}
-                onClick={async () => {
-                  setSelectedChat(chat);
-                  if (unreadCount > 0) {
-                    await updateDoc(doc(db, 'chats', chat.id), {
-                      [`unreadCount.${myId}`]: 0
-                    });
-                  }
-                }}
-                className={`w-full p-4 flex items-center gap-3 border-b border-[#003366] border-opacity-10 transition-all ${
-                  selectedChat?.id === chat.id 
-                    ? 'bg-[#003366] text-white' 
-                    : 'hover:bg-[#003366] hover:bg-opacity-5'
-                }`}
-              >
-                <div className={`w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0 relative ${
-                  selectedChat?.id === chat.id 
-                    ? 'bg-white text-[#003366]' 
-                    : 'bg-[#003366] bg-opacity-10 text-[#003366]'
-                }`}>
-                  {otherName.charAt(0)}
-                  {unreadCount > 0 && selectedChat?.id !== chat.id && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-white">
-                      {unreadCount}
-                    </span>
-                  )}
-                </div>
-                <div className="text-left overflow-hidden flex-1">
-                  <div className="flex justify-between items-center gap-2">
-                    <p className={`text-sm font-bold truncate ${selectedChat?.id === chat.id ? 'text-white' : 'text-[#003366]'}`}>{otherName}</p>
+              <div key={chat.id} className="relative group">
+                <button
+                  onClick={async () => {
+                    setSelectedChat(chat);
+                    if (unreadCount > 0) {
+                      await updateDoc(doc(db, 'chats', chat.id), {
+                        [`unreadCount.${myId}`]: 0
+                      });
+                    }
+                  }}
+                  className={`w-full p-4 flex items-center gap-3 border-b border-[#003366] border-opacity-10 transition-all ${
+                    selectedChat?.id === chat.id 
+                      ? 'bg-[#003366] text-white' 
+                      : 'hover:bg-[#003366] hover:bg-opacity-5'
+                  }`}
+                >
+                  <div className={`w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0 relative ${
+                    selectedChat?.id === chat.id 
+                      ? 'bg-white text-[#003366]' 
+                      : 'bg-[#003366] bg-opacity-10 text-[#003366]'
+                  }`}>
+                    {otherName.charAt(0)}
                     {unreadCount > 0 && selectedChat?.id !== chat.id && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-white">
+                        {unreadCount}
+                      </span>
                     )}
                   </div>
-                  <p className={`text-[10px] font-mono truncate uppercase ${
-                    selectedChat?.id === chat.id ? 'text-white opacity-80' : 'text-[#003366] opacity-80'
-                  } ${unreadCount > 0 && selectedChat?.id !== chat.id ? 'font-bold opacity-100' : ''}`}>
-                    {chat.lastMessage || 'Nova conversa'}
-                  </p>
-                </div>
-              </button>
+                  <div className="text-left overflow-hidden flex-1">
+                    <div className="flex justify-between items-center gap-2">
+                      <p className={`text-sm font-bold truncate ${selectedChat?.id === chat.id ? 'text-white' : 'text-[#003366]'}`}>{otherName}</p>
+                      {unreadCount > 0 && selectedChat?.id !== chat.id && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                      )}
+                    </div>
+                    <p className={`text-[10px] font-mono truncate uppercase ${
+                      selectedChat?.id === chat.id ? 'text-white opacity-80' : 'text-[#003366] opacity-80'
+                    } ${unreadCount > 0 && selectedChat?.id !== chat.id ? 'font-bold opacity-100' : ''}`}>
+                      {chat.lastMessage || 'Nova conversa'}
+                    </p>
+                  </div>
+                </button>
+                <button 
+                  onClick={(e) => handleDeleteChat(e, chat.id)}
+                  className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 transition-all rounded flex items-center gap-1 ${
+                    chatDeleteConfirmId === chat.id 
+                      ? 'bg-red-600 text-white z-10 opacity-100 shadow-lg' 
+                      : 'opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-500 hover:text-white'
+                  } ${
+                    selectedChat?.id === chat.id && chatDeleteConfirmId !== chat.id ? 'text-white hover:bg-white hover:bg-opacity-20' : ''
+                  }`}
+                  title={chatDeleteConfirmId === chat.id ? "Confirmar Eliminar" : "Eliminar Conversa"}
+                >
+                  <Trash2 size={14} />
+                  {chatDeleteConfirmId === chat.id && <span className="text-[8px] font-bold uppercase">Apagar?</span>}
+                </button>
+              </div>
             );
           })}
         </div>
@@ -178,7 +218,13 @@ export function Messaging({ userProfile, students }: MessagingProps) {
       {/* Main Chat Area */}
       <div className={`flex-1 flex flex-col bg-white ${!selectedChat ? 'hidden md:flex items-center justify-center' : 'flex'}`}>
         {selectedChat ? (
-          <ChatWindow chat={selectedChat} currentUser={userProfile} onBack={() => setSelectedChat(null)} />
+          <ChatWindow 
+            chat={selectedChat} 
+            currentUser={userProfile} 
+            onBack={() => setSelectedChat(null)} 
+            onDelete={(e) => handleDeleteChat(e, selectedChat.id)}
+            isDeleting={chatDeleteConfirmId === selectedChat.id}
+          />
         ) : (
           <div className="text-center opacity-20">
             <MessageCircle size={80} className="mx-auto mb-4" />
@@ -247,11 +293,19 @@ export function Messaging({ userProfile, students }: MessagingProps) {
   );
 }
 
-function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: UserProfile, onBack: () => void }) {
+function ChatWindow({ chat, currentUser, onBack, onDelete, isDeleting }: { 
+  chat: Chat, 
+  currentUser: UserProfile, 
+  onBack: () => void, 
+  onDelete: (e: React.MouseEvent) => void,
+  isDeleting: boolean
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const otherId = chat.participants.find(p => p !== currentUser.id);
   const otherName = otherId ? chat.participantNames[otherId] : 'Utilizador';
 
@@ -304,10 +358,74 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
       
       await updateDoc(doc(db, 'chats', chat.id), updateData);
     } catch (error) {
-      console.error("Error sending audio:", error);
-      alert("Erro ao enviar áudio.");
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chat.id}/messages (audio)`);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert("Por favor, selecione um ficheiro de imagem.");
+      return;
+    }
+
+    setIsUploadingImage(true);
+    const senderId = (currentUser.role === 'STUDENT' && currentUser.studentId) ? currentUser.studentId : currentUser.id;
+
+    try {
+      const storageRef = ref(storage, `chats/${chat.id}/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(storageRef);
+
+      const otherId = chat.participants.find(p => p !== senderId);
+
+      await addDoc(collection(db, 'chats', chat.id, 'messages'), {
+        senderId,
+        senderName: currentUser.name,
+        imageUrl,
+        createdAt: serverTimestamp(),
+      });
+
+      const updateData: any = {
+        lastMessage: '📷 Imagem',
+        updatedAt: serverTimestamp(),
+      };
+      
+      if (otherId) {
+        updateData[`unreadCount.${otherId}`] = increment(1);
+      }
+      
+      await updateDoc(doc(db, 'chats', chat.id), updateData);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chat.id}/messages (image)`);
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteMessage = async (e: React.MouseEvent, messageId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (deleteConfirmId !== messageId) {
+      setDeleteConfirmId(messageId);
+      // Auto-reset after 3 seconds
+      setTimeout(() => setDeleteConfirmId(null), 3000);
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'chats', chat.id, 'messages', messageId));
+      setDeleteConfirmId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `chats/${chat.id}/messages/${messageId}`);
     }
   };
 
@@ -317,10 +435,8 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
 
     setIsSending(true);
     const text = newMessage.trim();
-    setNewMessage('');
 
     const senderId = (currentUser.role === 'STUDENT' && currentUser.studentId) ? currentUser.studentId : currentUser.id;
-
     const otherId = chat.participants.find(p => p !== senderId);
 
     try {
@@ -342,8 +458,9 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
       }
       
       await updateDoc(doc(db, 'chats', chat.id), updateData);
+      setNewMessage('');
     } catch (error) {
-      console.error("Error sending message:", error);
+      handleFirestoreError(error, OperationType.WRITE, `chats/${chat.id}/messages`);
     } finally {
       setIsSending(false);
     }
@@ -365,6 +482,20 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
             <p className="text-[8px] font-mono opacity-70 uppercase text-[#003366] font-bold">Online</p>
           </div>
         </div>
+        <button 
+          onClick={onDelete}
+          className={`p-2 rounded-sm transition-all flex items-center gap-2 border ${
+            isDeleting 
+              ? 'bg-red-600 text-white border-red-700 shadow-inner' 
+              : 'text-red-600 hover:bg-red-50 border-transparent'
+          }`}
+          title={isDeleting ? "Clique novamente para confirmar" : "Eliminar Conversa Inteira"}
+        >
+          <Trash2 size={16} />
+          <span className={`hidden sm:inline text-[10px] font-mono uppercase font-bold ${isDeleting ? 'text-white' : 'text-red-600'}`}>
+            {isDeleting ? 'Confirmar Apagar?' : 'Eliminar Chat'}
+          </span>
+        </button>
       </div>
 
       {/* Messages */}
@@ -414,7 +545,18 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
                       ? 'bg-white text-[#003366] shadow-[3px_3px_0px_0px_rgba(0,0,0,0.3)]' 
                       : 'bg-blue-100 text-[#003366] shadow-[3px_3px_0px_0px_rgba(0,0,0,0.2)]'
                   }`}>
-                    {m.text && <p>{m.text}</p>}
+                    {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                    {m.imageUrl && (
+                      <div className="mt-2 rounded-sm overflow-hidden border border-[#003366] border-opacity-10 bg-white">
+                        <img 
+                          src={m.imageUrl} 
+                          alt="Shared" 
+                          className="max-w-full h-auto max-h-[300px] object-contain block cursor-pointer"
+                          onClick={() => window.open(m.imageUrl, '_blank')}
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    )}
                     {m.audioUrl && (
                       <div className="flex items-center gap-2 py-1">
                         <AudioPlayer url={m.audioUrl} invert={isOwn} />
@@ -423,6 +565,21 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
                     <div className={`mt-1 flex items-center gap-1 text-[8px] font-mono justify-end font-bold opacity-60 text-[#003366]`}>
                       {m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                       {isOwn && <CheckCheck size={10} />}
+                      {(isOwn || currentUser.role === 'ADMIN') && (
+                        <button 
+                          onClick={(e) => handleDeleteMessage(e, m.id)}
+                          className={`ml-2 transition-all p-1.5 rounded flex items-center gap-1 ${
+                            deleteConfirmId === m.id 
+                              ? 'bg-red-600 text-white font-bold px-2' 
+                              : 'text-red-600 hover:bg-red-50'
+                          }`}
+                          title={deleteConfirmId === m.id ? "Confirmar Eliminação" : "Eliminar Mensagem"}
+                          type="button"
+                        >
+                          <Trash2 size={14} />
+                          {deleteConfirmId === m.id && <span className="text-[7px] uppercase">Apagar?</span>}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -435,21 +592,43 @@ function ChatWindow({ chat, currentUser, onBack }: { chat: Chat, currentUser: Us
       {/* Input */}
       <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-[#003366] border-opacity-10">
         <div className="flex gap-2 items-center">
-          {!newMessage.trim() && (
-            <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isSending} />
-          )}
           <input 
-            type="text" 
+            type="file" 
+            accept="image/*" 
+            className="hidden" 
+            ref={fileInputRef}
+            onChange={handleImageUpload}
+          />
+          {!newMessage.trim() && (
+            <div className="flex gap-1 items-center">
+              <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isSending} />
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingImage || isSending}
+                className="p-2 text-[#003366] hover:bg-blue-50 rounded-sm transition-colors"
+                title="Enviar Imagem"
+              >
+                {isUploadingImage ? (
+                  <div className="w-5 h-5 border-2 border-[#003366] border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <ImageIcon size={20} />
+                )}
+              </button>
+            </div>
+          )}
+          <textarea 
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             disabled={isSending}
             placeholder="Escreva uma mensagem..." 
-            className="flex-1 p-3 border border-[#003366] border-opacity-20 text-xs focus:outline-none focus:border-opacity-100 font-sans"
+            rows={1}
+            className="flex-1 p-3 border border-[#003366] border-opacity-20 text-xs focus:outline-none focus:border-opacity-100 font-sans resize-none min-h-[44px] max-h-[120px]"
           />
           <button 
             type="submit"
             disabled={!newMessage.trim() || isSending}
-            className="px-6 bg-[#003366] text-white transition-all hover:bg-opacity-90 disabled:opacity-30 flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,51,102,1)] active:translate-x-1 active:translate-y-1 active:shadow-none"
+            className="px-6 py-3 bg-[#003366] text-white transition-all hover:bg-opacity-90 disabled:opacity-30 flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,51,102,1)] active:translate-x-1 active:translate-y-1 active:shadow-none"
           >
             <Send size={16} />
           </button>

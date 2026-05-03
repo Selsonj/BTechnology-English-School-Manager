@@ -128,7 +128,8 @@ service cloud.firestore {
              data.senderName is string && data.senderName.size() > 0 &&
              (
                (data.text is string && data.text.size() > 0) ||
-               (data.audioUrl is string && data.audioUrl.size() > 0)
+               (data.audioUrl is string && data.audioUrl.size() > 0) ||
+               (data.imageUrl is string && data.imageUrl.size() > 0)
              );
     }
 
@@ -237,6 +238,10 @@ service cloud.firestore {
         request.auth.uid in existing().participants || 
         (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in existing().participants)
       ) && isValidChat(incoming());
+      allow delete: if isAdmin() || (isSignedIn() && (
+        request.auth.uid in existing().participants || 
+        (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in existing().participants)
+      ));
       
       match /messages/{messageId} {
         allow read: if isSignedIn() && (
@@ -247,6 +252,11 @@ service cloud.firestore {
           request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
           (isStudent() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
         ) && isValidMessage(incoming());
+        allow delete: if isSignedIn() && (
+          resource.data.senderId == request.auth.uid ||
+          (isStudent() && resource.data.senderId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId) ||
+          isAdmin()
+        );
       }
     }
 
@@ -254,6 +264,11 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isSignedIn(); // Broad read for listing, but relies on client queries
         allow create: if isSignedIn() && isValidMessage(incoming()); 
+        allow delete: if isSignedIn() && (
+          resource.data.senderId == request.auth.uid ||
+          (isStudent() && resource.data.senderId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId) ||
+          isAdmin()
+        );
       }
     }
 

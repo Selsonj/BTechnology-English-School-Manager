@@ -5,13 +5,15 @@ import {
   orderBy, 
   onSnapshot, 
   addDoc, 
+  deleteDoc,
+  doc,
   serverTimestamp, 
   limit
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db, storage, handleFirestoreError, OperationType } from '../firebase';
 import { ChatMessage, UserProfile } from '../types';
-import { Send, MessageSquare, CheckCheck, User, Play, Pause } from 'lucide-react';
+import { Send, MessageSquare, CheckCheck, User, Play, Pause, Trash2, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VoiceRecorder } from './VoiceRecorder';
 
@@ -25,8 +27,10 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!classId || !isOpen) return;
@@ -68,10 +72,59 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
         createdAt: serverTimestamp(),
       });
     } catch (error) {
-      console.error("Error sending audio to class chat:", error);
-      alert("Erro ao enviar áudio.");
+      handleFirestoreError(error, OperationType.WRITE, `classChats/${classId}/messages (audio)`);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userProfile) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert("Por favor, selecione um ficheiro de imagem.");
+      return;
+    }
+
+    setIsUploadingImage(true);
+
+    try {
+      const storageRef = ref(storage, `class_chats/${classId}/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(storageRef);
+
+      await addDoc(collection(db, 'classChats', classId, 'messages'), {
+        senderId: userProfile.id,
+        senderName: userProfile.name,
+        imageUrl,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `classChats/${classId}/messages (image)`);
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteMessage = async (e: React.MouseEvent, messageId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (deleteConfirmId !== messageId) {
+      setDeleteConfirmId(messageId);
+      setTimeout(() => setDeleteConfirmId(null), 3000);
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'classChats', classId, 'messages', messageId));
+      setDeleteConfirmId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `classChats/${classId}/messages/${messageId}`);
     }
   };
 
@@ -81,7 +134,6 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
 
     setIsSending(true);
     const text = newMessage.trim();
-    setNewMessage('');
 
     try {
       await addDoc(collection(db, 'classChats', classId, 'messages'), {
@@ -90,8 +142,9 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
         text,
         createdAt: serverTimestamp(),
       });
+      setNewMessage('');
     } catch (error) {
-      console.error("Error sending message to class chat:", error);
+      handleFirestoreError(error, OperationType.WRITE, `classChats/${classId}/messages`);
     } finally {
       setIsSending(false);
     }
@@ -184,7 +237,18 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
                         ? 'bg-yellow-50 text-[#003366] border-l-4 border-yellow-400 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.2)]'
                         : 'bg-blue-100 text-[#003366] shadow-[3px_3px_0px_0px_rgba(0,0,0,0.2)]'
                   }`}>
-                    {m.text && <p>{m.text}</p>}
+                    {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                    {m.imageUrl && (
+                      <div className="mt-2 rounded-sm overflow-hidden border border-[#003366] border-opacity-10 bg-white shadow-sm">
+                        <img 
+                          src={m.imageUrl} 
+                          alt="Shared" 
+                          className="max-w-full h-auto max-h-[250px] object-contain block cursor-pointer"
+                          onClick={() => window.open(m.imageUrl, '_blank')}
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    )}
                     {m.audioUrl && (
                       <div className="mt-2">
                         <AudioPlayer url={m.audioUrl} invert={isOwn} />
@@ -193,6 +257,21 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
                     <div className={`mt-1 flex items-center gap-1 text-[8px] font-mono justify-end font-bold ${isOwn || isTeacherMessage || !isOwn ? 'opacity-60 text-[#003366]' : 'opacity-60 text-white'}`}>
                       {m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                       {isOwn && <CheckCheck size={10} />}
+                      {(isOwn || userProfile?.role === 'ADMIN') && (
+                        <button 
+                          onClick={(e) => handleDeleteMessage(e, m.id)}
+                          className={`ml-2 transition-all p-1.5 rounded flex items-center gap-1 ${
+                            deleteConfirmId === m.id 
+                              ? 'bg-red-600 text-white font-bold px-2' 
+                              : 'text-red-600 hover:bg-red-50'
+                          }`}
+                          title={deleteConfirmId === m.id ? "Confirmar" : "Eliminar"}
+                          type="button"
+                        >
+                          <Trash2 size={14} />
+                          {deleteConfirmId === m.id && <span className="text-[7px] uppercase">Apagar?</span>}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -204,16 +283,38 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
 
       <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-[#003366] border-opacity-10">
         <div className="flex gap-2 items-center">
-          {!newMessage.trim() && (
-            <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isSending} />
-          )}
           <input 
-            type="text" 
+            type="file" 
+            accept="image/*" 
+            className="hidden" 
+            ref={fileInputRef}
+            onChange={handleImageUpload}
+          />
+          {!newMessage.trim() && (
+            <div className="flex gap-1 items-center">
+              <VoiceRecorder onRecordingComplete={handleSendAudio} disabled={isSending} />
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingImage || isSending}
+                className="p-2 text-[#003366] hover:bg-blue-50 rounded-sm transition-colors"
+                title="Sincronizar Imagem"
+              >
+                {isUploadingImage ? (
+                  <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <ImageIcon size={18} />
+                )}
+              </button>
+            </div>
+          )}
+          <textarea 
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             disabled={isSending}
             placeholder="Escreva na turma..." 
-            className="flex-1 p-2 border border-[#003366] border-opacity-20 text-xs focus:outline-none focus:border-opacity-100 font-sans"
+            rows={1}
+            className="flex-1 p-2 border border-[#003366] border-opacity-20 text-xs focus:outline-none focus:border-opacity-100 font-sans resize-none min-h-[38px] max-h-[100px]"
           />
           <button 
             type="submit"
