@@ -1281,6 +1281,13 @@ function ClassesManager({ classes, students, enrollments, materials, profile }: 
   const [isAdding, setIsAdding] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'mural' | 'materials' | 'students'>('mural');
+  
+  useEffect(() => {
+    if (selectedClassId) {
+      setActiveSubTab('mural');
+    }
+  }, [selectedClassId]);
 
   const handleAddClass = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -1352,73 +1359,117 @@ function ClassesManager({ classes, students, enrollments, materials, profile }: 
     const classEnrollments = enrollments.filter(e => e.classId === selectedClassId);
     
     return (
-      <div className="space-y-8">
-        <header className="flex justify-between items-end">
-          <div>
-            <button 
-              onClick={() => setSelectedClassId(null)}
-              className="text-[10px] font-mono uppercase opacity-50 hover:opacity-100 mb-2 flex items-center gap-1"
-            >
-              ← Voltar para Turmas
-            </button>
-            <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">{cls?.name}</h1>
-            <p className="text-sm font-mono opacity-50 uppercase mt-2">{cls?.schedule}</p>
+      <div className="space-y-6">
+        <header className="flex flex-col gap-2">
+          <button 
+            onClick={() => setSelectedClassId(null)}
+            className="text-[10px] font-mono uppercase opacity-50 hover:opacity-100 flex items-center gap-1 w-fit"
+          >
+            ← Voltar para Turmas
+          </button>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">{cls?.name}</h1>
+              <p className="text-sm font-mono opacity-50 uppercase mt-1">{cls?.schedule}</p>
+            </div>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          <div className="lg:col-span-2 space-y-6">
-            <h3 className="text-xs font-mono uppercase tracking-widest border-b border-[#003366] pb-2">Alunos Matriculados</h3>
-            <div className="space-y-4">
-              {classEnrollments.map(enrollment => {
-                const student = students.find(s => s.id === enrollment.studentId);
-                return (
-                  <div key={enrollment.id} className="flex items-center justify-between p-4 border border-[#003366] bg-white">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-[#003366] bg-opacity-5 flex items-center justify-center font-mono text-sm">
-                        {student?.name?.charAt(0) || '?'}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold">{student?.name || 'Aluno Desconhecido'}</p>
-                        <p className="text-[10px] font-mono opacity-50 uppercase">{student?.level}</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handleRemoveEnrollment(enrollment.id)}
-                      className="text-[10px] font-mono uppercase text-red-600 opacity-50 hover:opacity-100"
-                    >
-                      Remover
-                    </button>
-                  </div>
-                );
-              })}
-              {classEnrollments.length === 0 && (
-                <p className="text-sm font-mono opacity-40 italic">Nenhum aluno matriculado nesta turma.</p>
+        {/* Tab Navigation */}
+        <div className="flex border-b border-[#003366] border-opacity-10 sticky top-0 bg-white z-20 pb-px">
+          {[
+            { id: 'mural', label: 'Chat da Turma', icon: MessageCircle },
+            { id: 'materials', label: 'Materiais', icon: FileText },
+            { id: 'students', label: 'Gestão de Alunos', icon: Users },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id as any)}
+              className={`px-4 sm:px-8 py-4 text-[10px] font-mono uppercase tracking-widest transition-all flex items-center gap-2 relative ${
+                activeSubTab === tab.id 
+                  ? 'text-[#003366] font-bold' 
+                  : 'text-gray-400 hover:text-[#003366]'
+              }`}
+            >
+              <tab.icon size={14} />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.id === 'mural' ? 'Chat' : tab.id === 'materials' ? 'Materiais' : 'Alunos'}</span>
+              {activeSubTab === tab.id && (
+                <motion.div 
+                  layoutId="activeSubTab"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#003366]" 
+                />
               )}
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <h3 className="text-xs font-mono uppercase tracking-widest border-b border-[#003366] pb-2">Matricular Aluno</h3>
-            <form onSubmit={handleEnrollStudent} className="space-y-4 p-6 border border-[#003366] bg-white shadow-[4px_4px_0px_0px_rgba(0,51,102,1)]">
-              <div className="space-y-2">
-                <label className="text-[10px] font-mono uppercase opacity-50">Selecionar Aluno</label>
-                <select name="studentId" required className="w-full p-3 border border-[#003366] text-sm focus:outline-none bg-white">
-                  <option value="">Escolha um aluno</option>
-                  {students.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <button type="submit" className="w-full py-3 bg-[#003366] text-white text-xs font-mono uppercase tracking-widest">
-                Matricular
-              </button>
-            </form>
-          </div>
+            </button>
+          ))}
         </div>
 
-        <MaterialsSection classId={selectedClassId} materials={materials} user={profile} />
-        <ClassChat classId={selectedClassId} userProfile={profile} teacherId={cls?.teacherId} />
+        <div className="mt-6">
+          {activeSubTab === 'mural' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <ClassChat classId={selectedClassId} userProfile={profile} teacherId={cls?.teacherId} />
+            </div>
+          )}
+
+          {activeSubTab === 'materials' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <MaterialsSection classId={selectedClassId} materials={materials} user={profile} />
+            </div>
+          )}
+
+          {activeSubTab === 'students' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="lg:col-span-2 space-y-6">
+                <h3 className="text-xs font-mono uppercase tracking-widest border-b border-[#003366] pb-2">Alunos Matriculados</h3>
+                <div className="space-y-4">
+                  {classEnrollments.map(enrollment => {
+                    const student = students.find(s => s.id === enrollment.studentId);
+                    return (
+                      <div key={enrollment.id} className="flex items-center justify-between p-4 border border-[#003366] bg-white group hover:shadow-[4px_4px_0px_0px_rgba(0,51,102,1)] transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-[#003366] bg-opacity-5 flex items-center justify-center font-mono text-sm">
+                            {student?.name?.charAt(0) || '?'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold">{student?.name || 'Aluno Desconhecido'}</p>
+                            <p className="text-[10px] font-mono opacity-50 uppercase">{student?.level}</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleRemoveEnrollment(enrollment.id)}
+                          className="text-[10px] font-mono uppercase text-red-600 opacity-50 hover:opacity-100 p-2 hover:bg-red-50 rounded"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {classEnrollments.length === 0 && (
+                    <p className="text-sm font-mono opacity-40 italic py-8 border-2 border-dashed border-[#003366] border-opacity-10 text-center">Nenhum aluno matriculado nesta turma.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <h3 className="text-xs font-mono uppercase tracking-widest border-b border-[#003366] pb-2">Matricular Aluno</h3>
+                <form onSubmit={handleEnrollStudent} className="space-y-4 p-6 border border-[#003366] bg-white shadow-[4px_4px_0px_0px_rgba(0,51,102,1)]">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono uppercase opacity-50">Selecionar Aluno</label>
+                    <select name="studentId" required className="w-full p-3 border border-[#003366] text-sm focus:outline-none bg-white">
+                      <option value="">Escolha um aluno</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button type="submit" className="w-full py-3 bg-[#003366] text-white text-xs font-mono uppercase tracking-widest hover:opacity-90 transition-opacity">
+                    Matricular Aluno
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -2047,53 +2098,141 @@ function StudentClasses({ profile, enrollments, classes, attendances, materials 
   attendances: Attendance[],
   materials: Material[]
 }) {
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'mural' | 'materials'>('mural');
+  
+  useEffect(() => {
+    if (selectedClassId) {
+      setActiveSubTab('mural');
+    }
+  }, [selectedClassId]);
+
   const myEnrollments = enrollments.filter(e => e.studentId === profile?.studentId);
   const myClasses = myEnrollments.map(e => classes.find(c => c.id === e.classId)).filter((c): c is Class => c !== undefined);
+
+  if (selectedClassId) {
+    const cls = myClasses.find(c => c.id === selectedClassId);
+    if (!cls) {
+      setSelectedClassId(null);
+      return null;
+    }
+    const classAttendances = attendances.filter(a => a.classId === cls.id && a.studentId === profile?.studentId);
+
+    return (
+      <div className="space-y-6">
+        <header className="flex flex-col gap-2">
+          <button 
+            onClick={() => setSelectedClassId(null)}
+            className="text-[10px] font-mono uppercase opacity-50 hover:opacity-100 flex items-center gap-1 w-fit"
+          >
+            ← Voltar para Minhas Turmas
+          </button>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">{cls.name}</h1>
+              <p className="text-sm font-mono opacity-50 uppercase mt-1">{cls.schedule}</p>
+            </div>
+            
+            <div className="space-y-2">
+              <h4 className="text-[9px] font-mono uppercase opacity-40 tracking-widest text-right">Ultimas Chamadas</h4>
+              <div className="flex flex-wrap gap-1 justify-end">
+                {classAttendances.slice(-10).map((a, i) => (
+                  <div 
+                    key={i} 
+                    className={`w-5 h-5 flex items-center justify-center text-[9px] font-mono font-bold border ${
+                      a.status === 'PRESENT' ? 'bg-green-600 text-white border-green-600' : 
+                      a.status === 'ABSENT' ? 'bg-red-600 text-white border-red-600' : 
+                      'bg-orange-500 text-white border-orange-500'
+                    }`}
+                    title={`${a.date}: ${a.status}`}
+                  >
+                    {a.status[0]}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Tab Navigation */}
+        <div className="flex border-b border-[#003366] border-opacity-10 sticky top-0 bg-white z-20 pb-px">
+          {[
+            { id: 'mural', label: 'Chat da Turma', icon: MessageCircle },
+            { id: 'materials', label: 'Materiais de Apoio', icon: FileText },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id as any)}
+              className={`px-4 sm:px-8 py-4 text-[10px] font-mono uppercase tracking-widest transition-all flex items-center gap-2 relative ${
+                activeSubTab === tab.id 
+                  ? 'text-[#003366] font-bold' 
+                  : 'text-gray-400 hover:text-[#003366]'
+              }`}
+            >
+              <tab.icon size={14} />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.id === 'mural' ? 'Chat' : 'Materiais'}</span>
+              {activeSubTab === tab.id && (
+                <motion.div 
+                  layoutId="activeSubTabStudent"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#003366]" 
+                />
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          {activeSubTab === 'mural' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <ClassChat classId={cls.id} userProfile={profile} teacherId={cls.teacherId} />
+            </div>
+          )}
+          {activeSubTab === 'materials' && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <MaterialsSection classId={cls.id} materials={materials} user={profile} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">Minhas Aulas</h1>
-        <p className="text-sm font-mono opacity-50 uppercase mt-2">Suas turmas e horários</p>
+        <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-[#003366]">Minhas Turmas</h1>
+        <p className="text-sm font-mono opacity-50 uppercase mt-2">Seus horários e grupos de estudo</p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {myClasses.map(cls => {
-          const classAttendances = attendances.filter(a => a.classId === cls.id && a.studentId === profile?.studentId);
           return (
-            <div key={cls.id} className="p-6 border border-[#003366] bg-white group hover:shadow-[4px_4px_0px_0px_rgba(0,51,102,1)] transition-all">
+            <div 
+              key={cls.id} 
+              onClick={() => setSelectedClassId(cls.id)}
+              className="p-6 border border-[#003366] bg-white group hover:shadow-[8px_8px_0px_0px_rgba(0,51,102,1)] transition-all cursor-pointer relative overflow-hidden"
+            >
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="text-xl font-bold">{cls.name}</h3>
+                  <h3 className="text-xl font-bold text-[#003366]">{cls.name}</h3>
                   <div className="flex items-center gap-2 text-xs font-mono opacity-60 mt-1 uppercase">
                     <Calendar size={12} />
                     {cls.schedule}
                   </div>
                 </div>
-                <BookOpen size={24} className="opacity-20" />
-              </div>
-              
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-mono uppercase opacity-40 tracking-widest border-b border-[#003366] border-opacity-10 pb-1">Histórico nesta turma</h4>
-                <div className="flex flex-wrap gap-1">
-                  {classAttendances.slice(-10).map((a, i) => (
-                    <div 
-                      key={i} 
-                      className={`w-6 h-6 flex items-center justify-center text-[10px] font-mono font-bold border ${
-                        a.status === 'PRESENT' ? 'bg-green-600 text-white border-green-600' : 
-                        a.status === 'ABSENT' ? 'bg-red-600 text-white border-red-600' : 
-                        'bg-orange-500 text-white border-orange-500'
-                      }`}
-                      title={`${a.date}: ${a.status}`}
-                    >
-                      {a.status[0]}
-                    </div>
-                  ))}
-                  {classAttendances.length === 0 && <p className="text-[10px] font-mono opacity-30 italic">Sem registos ainda.</p>}
+                <div className="p-3 bg-[#003366] bg-opacity-5 text-[#003366] rounded-sm group-hover:bg-[#003366] group-hover:text-white transition-colors">
+                  <BookOpen size={24} />
                 </div>
               </div>
-              <MaterialsSection classId={cls.id} materials={materials} user={profile} />
-              <ClassChat classId={cls.id} userProfile={profile} teacherId={cls.teacherId} />
+              
+              <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-[#003366] font-bold">
+                <span>Aceder à Turma</span>
+                <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+              </div>
+
+              {/* Decorative accent */}
+              <div className="absolute top-0 right-0 w-16 h-16 bg-[#003366] opacity-5 -mr-8 -mt-8 rotate-45" />
             </div>
           );
         })}
@@ -2286,8 +2425,8 @@ function MaterialsSection({ classId, materials, user }: { classId: string, mater
   };
 
   return (
-    <div className="space-y-6 mt-8 pt-8 border-t border-[#003366] border-opacity-10">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      <div className="flex justify-between items-center bg-white p-3 border border-[#003366] border-opacity-10">
         <h4 className="text-[10px] font-mono uppercase opacity-80 text-[#003366] font-bold tracking-widest flex items-center gap-2">
           <FileText size={12} />
           Materiais & Conteúdos

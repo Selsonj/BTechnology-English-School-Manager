@@ -21,14 +21,15 @@ interface ClassChatProps {
   classId: string;
   userProfile: UserProfile | null;
   teacherId?: string;
+  isOpenDefault?: boolean;
 }
 
-export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
+export function ClassChat({ classId, userProfile, teacherId, isOpenDefault = true }: ClassChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(isOpenDefault);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -163,18 +164,12 @@ export function ClassChat({ classId, userProfile, teacherId }: ClassChatProps) {
   }
 
   return (
-    <div className="mt-8 border border-[#003366] bg-white flex flex-col h-[450px] shadow-[6px_6px_0px_0px_rgba(0,51,102,1)]">
+    <div className="mt-4 border border-[#003366] bg-white flex flex-col h-[550px] shadow-[6px_6px_0px_0px_rgba(0,51,102,1)]">
       <div className="p-3 border-b border-[#003366] bg-[#003366] text-white flex justify-between items-center">
         <div className="flex items-center gap-2">
           <MessageSquare size={14} />
           <h4 className="text-[10px] font-mono uppercase tracking-widest font-bold">Chat da Turma</h4>
         </div>
-        <button 
-          onClick={() => setIsOpen(false)}
-          className="text-[10px] font-mono uppercase opacity-70 hover:opacity-100"
-        >
-          Fechar
-        </button>
       </div>
 
       <div 
